@@ -1,0 +1,36 @@
+name: PondSense - Email Poll
+
+on:
+  schedule:
+    # GitHub Actions cron is best-effort, not exact - actual runs can
+    # slip a few minutes during high load on GitHub's shared runners.
+    # Fine for this use case; don't rely on this for anything
+    # millisecond-sensitive.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab, for testing
+
+jobs:
+  check-email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Check and reply to unread PondSense emails
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # Your REAL hosted URL (Render/Railway), not ngrok - see
+          # get_location_base_url() in email_reply_handler.py. This
+          # MUST be set once app.py is deployed, or every JOIN
+          # confirmation email will still link to "NGROK-NOT-RUNNING".
+          LOCATION_BASE_URL: ${{ secrets.LOCATION_BASE_URL }}
+        run: python run_email_check.py

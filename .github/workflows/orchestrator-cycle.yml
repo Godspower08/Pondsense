@@ -1,0 +1,33 @@
+name: PondSense - Orchestrator Cycle
+
+on:
+  schedule:
+    # Hourly, matching FortyGuard's own per-hour job granularity - no
+    # value in running this more often than the underlying data
+    # actually refreshes.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}  # manual trigger from the Actions tab, for testing
+
+jobs:
+  run-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run one full risk-assessment cycle
+        env:
+          PONDSENSE_LIVE: "1"
+          FORTYGUARD_API_KEY: ${{ secrets.FORTYGUARD_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LOCATION_BASE_URL: ${{ secrets.LOCATION_BASE_URL }}
+        run: python orchestrator.py

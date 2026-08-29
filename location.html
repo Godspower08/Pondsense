@@ -1,0 +1,488 @@
+<!-- PondSense — Location Pinning Page
+     Reached via a link in the JOIN confirmation email.
+     URL pattern: /location/<token>
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pin Your Pond — PondSense</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --forest: #1f4d3a;
+    --teal: #2a7f7e;
+    --rust: #b5502c;
+    --off-white: #faf7f2;
+    --indigo: #4b3f8f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--off-white);
+    color: var(--forest);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    background: var(--forest);
+    color: var(--off-white);
+    padding: 16px 20px;
+  }
+  header h1 { margin: 0; font-size: 1.15rem; }
+  header p { margin: 4px 0 0; font-size: 0.85rem; opacity: 0.85; }
+  main {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 480px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 18px;
+    border-left: 5px solid var(--teal);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .card.warn { border-left-color: var(--rust); }
+  .card.fail { border-left-color: #b03030; }
+  .card.good { border-left-color: var(--forest); }
+  .card-title { font-weight: 600; margin: 0 0 6px; }
+  .card-detail { margin: 0; font-size: 0.92rem; color: #444; }
+  .readout { font-size: 0.8rem; color: #777; margin-top: 8px; }
+  .tier-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--indigo);
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+  .map-slot {
+    height: 300px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+  }
+  button {
+    background: var(--teal);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  button.secondary {
+    background: transparent;
+    color: var(--teal);
+    border: 1px solid var(--teal);
+  }
+  section { display: none; flex-direction: column; gap: 12px; }
+  section.visible { display: flex; }
+  input[type="text"], input[type="number"] {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 0.95rem;
+  }
+  .hint { font-size: 0.8rem; color: #888; text-align: center; margin: 0; }
+  .width-card label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .width-card input[type="number"] { width: 100%; }
+  .coord-card label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 10px 0 6px;
+  }
+  .coord-card label:first-child { margin-top: 0; }
+  .coord-card input[type="number"] { width: 100%; }
+  .coord-card button { width: 100%; margin-top: 12px; }
+  .coord-card .hint { text-align: left; margin-top: 8px; }
+  .width-card .hint { text-align: left; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pin Your Pond Location</h1>
+  <p>PondSense needs your exact location for accurate heat alerts</p>
+</header>
+
+<main>
+
+  <!-- POND WIDTH — always visible, independent of which tier the
+       farmer ends up using for lat/lng. Read directly at submit time
+       so it doesn't need to be duplicated across tier1/tier2/tier3. -->
+  <div class="card width-card">
+    <label for="pond-width-input">Roughly how wide is your pond, in meters?</label>
+    <input type="number" id="pond-width-input" min="1" step="1" placeholder="e.g. 150">
+    <p class="hint">Longest side across the pond. A rough estimate is fine — this just helps us read the right area's temperature.</p>
+  </div>
+
+  <!-- TIER 1: browser GPS walk-around lock -->
+  <section id="tier1" class="visible">
+    <p class="tier-label">Step 1 of up to 3 — GPS lock</p>
+    <div id="status-card" class="card">
+      <p class="card-title" id="status-title">Requesting your location…</p>
+      <p class="card-detail" id="status-detail">
+        Please go outside to your pond and walk around it a little —
+        this helps your phone lock an accurate GPS position. Allow
+        location access when your browser asks.
+      </p>
+      <p class="readout" id="accuracy-readout"></p>
+    </div>
+  </section>
+
+  <!-- TIER 2: paste a link from an external maps app -->
+  <section id="tier2">
+    <p class="tier-label">Step 2 of 3 — Use a maps app instead</p>
+    <div class="card warn">
+      <p class="card-title">We couldn't get an accurate GPS fix.</p>
+      <p class="card-detail" id="tier2-detail">
+        Open Google Maps, find or drop a pin at your pond, tap Share,
+        and copy the link. Then paste it below.
+      </p>
+    </div>
+    <a href="https://maps.google.com" target="_blank" rel="noopener">
+      <button type="button">Open Google Maps</button>
+    </a>
+    <input type="text" id="maps-link-input" placeholder="Paste your Google Maps link here">
+    <button id="use-link-btn">Use this link</button>
+    <button id="skip-to-manual-btn" class="secondary">I don't have a maps app — place the pin manually</button>
+    <p class="hint" id="tier2-hint"></p>
+  </section>
+
+  <!-- TIER 3: manual pin drop -->
+  <section id="tier3">
+    <p class="tier-label">Step 3 of 3 — Place the pin manually</p>
+    <div class="card fail">
+      <p class="card-title">We can't accurately determine your location automatically.</p>
+      <p class="card-detail">Enter coordinates below, or drag the pin on the map to your exact pond location, then confirm.</p>
+    </div>
+    <div class="card coord-card">
+      <label for="lat-input">Latitude</label>
+      <input type="number" id="lat-input" step="any" placeholder="e.g. 30.3668">
+      <label for="lng-input">Longitude</label>
+      <input type="number" id="lng-input" step="any" placeholder="e.g. -89.9865">
+      <button type="button" id="go-to-coords-btn" class="secondary">Go to these coordinates</button>
+      <p class="hint" id="coord-hint">Tip: open Google Maps, tap and hold your pond's location, and the coordinates appear at the top — copy them in here.</p>
+    </div>
+    <div id="map3" class="map-slot"></div>
+    <button id="confirm-manual-btn">Confirm this location</button>
+  </section>
+
+  <!-- SHARED: confirm map used by tier 1 (good GPS fix) and tier 2 (parsed link) -->
+  <section id="confirm-tier">
+    <div id="confirm-status-card" class="card good">
+      <p class="card-title" id="confirm-title">Got a location!</p>
+      <p class="card-detail" id="confirm-detail">Drag the pin to correct it if needed, then confirm.</p>
+    </div>
+    <div id="map-confirm" class="map-slot"></div>
+    <button id="confirm-final-btn">Confirm this location</button>
+  </section>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // ---- Config ----
+  const GOOD_ACCURACY_M = 20;      // hard target — accept nothing worse
+  const WATCH_TIMEOUT_MS = 60000;  // give up chasing a good GPS fix after this long
+  const TOKEN = window.location.pathname.split('/').pop();
+  const SUBMIT_URL = `/location/${TOKEN}`;
+  const PARSE_LINK_URL = `/location/${TOKEN}/parse-link`;
+  const US_CENTER = [39.8283, -98.5795]; // fallback map view — no location guess at all yet
+
+  // ---- Shared state ----
+  let watchId = null;
+  let timeoutHandle = null;
+  let confirmMap = null;
+  let confirmMarker = null;
+  let confirmMethod = null;
+  let lastGpsAccuracy = null;
+
+  const sections = {
+    tier1: document.getElementById('tier1'),
+    tier2: document.getElementById('tier2'),
+    tier3: document.getElementById('tier3'),
+    confirm: document.getElementById('confirm-tier'),
+  };
+
+  function showOnly(name) {
+    Object.entries(sections).forEach(([key, el]) => {
+      el.classList.toggle('visible', key === name);
+    });
+  }
+
+  // ============================================================
+  // TIER 1 — GPS walk-around lock
+  // ============================================================
+  const statusCard = document.getElementById('status-card');
+  const statusTitle = document.getElementById('status-title');
+  const statusDetail = document.getElementById('status-detail');
+  const accuracyReadout = document.getElementById('accuracy-readout');
+
+  function setTier1Status(mode, title, detail) {
+    statusCard.className = 'card' + (mode ? ' ' + mode : '');
+    statusTitle.textContent = title;
+    statusDetail.textContent = detail;
+  }
+
+  function handlePosition(pos) {
+    const { latitude, longitude, accuracy } = pos.coords;
+    lastGpsAccuracy = accuracy;
+    accuracyReadout.textContent = `Current accuracy: ±${Math.round(accuracy)}m`;
+
+    if (accuracy <= GOOD_ACCURACY_M) {
+      stopWatching();
+      openConfirm(latitude, longitude, 'gps_confirmed',
+        'Got an accurate GPS lock!',
+        `Accurate to ±${Math.round(accuracy)}m. Drag the pin to correct it if needed, then confirm.`);
+    } else {
+      setTier1Status('warn', 'Refining your location…',
+        'Keep walking around near the pond, ideally with a clear view of the sky, until accuracy improves.');
+    }
+  }
+
+  function handleGpsError(err) {
+    stopWatching();
+    goToTier2(err && err.code === err.PERMISSION_DENIED
+      ? 'Location access was denied.'
+      : "We couldn't get an accurate GPS fix.");
+  }
+
+  function stopWatching() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+  }
+
+  function onGpsTimeout() {
+    stopWatching();
+    goToTier2("We can't accurately determine your location — GPS accuracy never got good enough.");
+  }
+
+  function startGpsLock() {
+    if (!navigator.geolocation) {
+      goToTier2('Your browser does not support location services.');
+      return;
+    }
+    watchId = navigator.geolocation.watchPosition(handlePosition, handleGpsError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 30000,
+    });
+    timeoutHandle = setTimeout(onGpsTimeout, WATCH_TIMEOUT_MS);
+  }
+
+  // ============================================================
+  // TIER 2 — paste a link from an external maps app
+  // ============================================================
+  const tier2Detail = document.getElementById('tier2-detail');
+  const tier2Hint = document.getElementById('tier2-hint');
+  const mapsLinkInput = document.getElementById('maps-link-input');
+  const useLinkBtn = document.getElementById('use-link-btn');
+  const skipToManualBtn = document.getElementById('skip-to-manual-btn');
+
+  function goToTier2(reasonText) {
+    tier2Detail.textContent = reasonText + ' Open Google Maps, find or drop a pin at ' +
+      'your pond, tap Share, and copy the link. Then paste it below.';
+    showOnly('tier2');
+  }
+
+  useLinkBtn.addEventListener('click', () => {
+    const url = mapsLinkInput.value.trim();
+    if (!url) {
+      tier2Hint.textContent = 'Paste a link first.';
+      return;
+    }
+    useLinkBtn.disabled = true;
+    useLinkBtn.textContent = 'Reading link…';
+    tier2Hint.textContent = '';
+
+    fetch(PARSE_LINK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(data => {
+        useLinkBtn.disabled = false;
+        useLinkBtn.textContent = 'Use this link';
+        openConfirm(data.lat, data.lng, 'maps_link',
+          'Got a location from your link!',
+          'Drag the pin to correct it if needed, then confirm.');
+      })
+      .catch(() => {
+        useLinkBtn.disabled = false;
+        useLinkBtn.textContent = 'Use this link';
+        tier2Hint.textContent = "Couldn't read a location from that link — check it's a Google Maps share link, or place the pin manually below.";
+      });
+  });
+
+  skipToManualBtn.addEventListener('click', () => goToTier3());
+
+  // ============================================================
+  // TIER 3 — manual pin drop
+  // ============================================================
+  let manualMap = null;
+  let manualMarker = null;
+  const confirmManualBtn = document.getElementById('confirm-manual-btn');
+  const latInput = document.getElementById('lat-input');
+  const lngInput = document.getElementById('lng-input');
+  const goToCoordsBtn = document.getElementById('go-to-coords-btn');
+  const coordHint = document.getElementById('coord-hint');
+
+  function goToTier3() {
+    showOnly('tier3');
+    if (!manualMap) {
+      manualMap = L.map('map3').setView(US_CENTER, 4);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(manualMap);
+      manualMarker = L.marker(US_CENTER, { draggable: true }).addTo(manualMap);
+      // Keep the coordinate inputs in sync if the farmer drags the
+      // pin instead of typing - either path should always agree on
+      // the same lat/lng at submit time.
+      manualMarker.on('dragend', () => {
+        const pos = manualMarker.getLatLng();
+        latInput.value = pos.lat.toFixed(6);
+        lngInput.value = pos.lng.toFixed(6);
+      });
+    }
+  }
+
+  function goToCoords() {
+    const lat = parseFloat(latInput.value);
+    const lng = parseFloat(lngInput.value);
+    coordHint.style.color = '';
+    if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      coordHint.textContent = 'Enter a valid latitude (-90 to 90) and longitude (-180 to 180).';
+      coordHint.style.color = '#b03030';
+      return;
+    }
+    coordHint.textContent = 'Tip: open Google Maps, tap and hold your pond\'s location, and the coordinates appear at the top — copy them in here.';
+    manualMap.setView([lat, lng], 18);
+    manualMarker.setLatLng([lat, lng]);
+  }
+
+  goToCoordsBtn.addEventListener('click', goToCoords);
+  // Also trigger on Enter from either field, so a farmer typing on a
+  // phone keyboard doesn't have to hunt for the button separately.
+  [latInput, lngInput].forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); goToCoords(); }
+    });
+  });
+
+  confirmManualBtn.addEventListener('click', () => {
+    // If coordinates were typed but "Go to these coordinates" was
+    // never clicked, the marker would still be sitting at whatever
+    // it was left at (default center, or a stale drag position) -
+    // sync it to the typed values one last time so Confirm always
+    // submits what's actually in the fields, not a stale pin.
+    const typedLat = parseFloat(latInput.value);
+    const typedLng = parseFloat(lngInput.value);
+    if (!Number.isNaN(typedLat) && !Number.isNaN(typedLng)) {
+      manualMarker.setLatLng([typedLat, typedLng]);
+    }
+    const pos = manualMarker.getLatLng();
+    submitLocation(pos.lat, pos.lng, null, 'manual_pin', confirmManualBtn);
+  });
+
+  // ============================================================
+  // SHARED CONFIRM STEP — used after a good GPS fix or a parsed link
+  // ============================================================
+  const confirmTitle = document.getElementById('confirm-title');
+  const confirmDetail = document.getElementById('confirm-detail');
+  const confirmFinalBtn = document.getElementById('confirm-final-btn');
+
+  function openConfirm(lat, lng, method, title, detail) {
+    confirmMethod = method;
+    confirmTitle.textContent = title;
+    confirmDetail.textContent = detail;
+    confirmFinalBtn.disabled = false;
+    confirmFinalBtn.textContent = 'Confirm this location';
+    showOnly('confirm');
+
+    if (!confirmMap) {
+      confirmMap = L.map('map-confirm').setView([lat, lng], 18);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+      }).addTo(confirmMap);
+      confirmMarker = L.marker([lat, lng], { draggable: true }).addTo(confirmMap);
+    } else {
+      confirmMap.setView([lat, lng], 18);
+      confirmMarker.setLatLng([lat, lng]);
+    }
+  }
+
+  confirmFinalBtn.addEventListener('click', () => {
+    const pos = confirmMarker.getLatLng();
+    submitLocation(
+      pos.lat, pos.lng,
+      confirmMethod === 'gps_confirmed' ? lastGpsAccuracy : null,
+      confirmMethod,
+      confirmFinalBtn
+    );
+  });
+
+  // ============================================================
+  // SUBMIT
+  // ============================================================
+  function submitLocation(lat, lng, accuracy_m, method, btn) {
+    // Read pond width fresh at submit time - this input lives outside
+    // the tier sections (see above), so it's the same element and
+    // value regardless of which tier (GPS / maps link / manual pin)
+    // the farmer went through.
+    const widthInput = document.getElementById('pond-width-input');
+    const pond_width_m = parseFloat(widthInput.value);
+    if (!pond_width_m || pond_width_m <= 0) {
+      widthInput.focus();
+      alert('Please enter roughly how wide your pond is (in meters) before confirming.');
+      return;
+    }
+
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving…';
+    fetch(SUBMIT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng, accuracy_m, method, pond_width_m }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(() => {
+        document.querySelectorAll('section').forEach(s => s.classList.remove('visible'));
+        const done = document.createElement('div');
+        done.className = 'card good';
+        done.innerHTML = '<p class="card-title">Location saved!</p>' +
+          '<p class="card-detail">Your pond location has been recorded. You can close this page.</p>';
+        document.querySelector('main').appendChild(done);
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        alert('Something went wrong saving your location — please try again.');
+      });
+  }
+
+  // Ask outright on load — no button tap required to start.
+  startGpsLock();
+</script>
+
+</body>
+</html>
