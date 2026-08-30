@@ -397,6 +397,17 @@
     const typedLat = parseFloat(latInput.value);
     const typedLng = parseFloat(lngInput.value);
     if (!Number.isNaN(typedLat) && !Number.isNaN(typedLng)) {
+      // Same range check goToCoords() does - this button can be
+      // clicked WITHOUT ever pressing "Go to these coordinates"
+      // first, so a mistyped value (missing decimal point, extra
+      // digit, etc.) must be caught here too, not just there -
+      // otherwise a bad value skips validation entirely and reaches
+      // the server as-is.
+      if (typedLat < -90 || typedLat > 90 || typedLng < -180 || typedLng > 180) {
+        coordHint.textContent = 'Enter a valid latitude (-90 to 90) and longitude (-180 to 180).';
+        coordHint.style.color = '#b03030';
+        return;
+      }
       manualMarker.setLatLng([typedLat, typedLng]);
     }
     const pos = manualMarker.getLatLng();
@@ -465,12 +476,22 @@
       body: JSON.stringify({ lat, lng, accuracy_m, method, pond_width_m }),
     })
       .then(r => r.ok ? r.json() : Promise.reject(r))
-      .then(() => {
+      .then((data) => {
         document.querySelectorAll('section').forEach(s => s.classList.remove('visible'));
         const done = document.createElement('div');
         done.className = 'card good';
+        // current_temp_c is best-effort - the location save itself
+        // already succeeded by this point regardless of whether a
+        // live reading came back in time, so this just adds an extra
+        // line when it's available rather than gating the message on it.
+        let tempLine = '';
+        if (typeof data.current_temp_c === 'number') {
+          const tempF = (data.current_temp_c * 9 / 5 + 32).toFixed(1);
+          tempLine = `<p class="card-detail">Current reading near your pond: ${tempF}&deg;F (${data.current_temp_c.toFixed(1)}&deg;C).</p>`;
+        }
         done.innerHTML = '<p class="card-title">Location saved!</p>' +
-          '<p class="card-detail">Your pond location has been recorded. You can close this page.</p>';
+          '<p class="card-detail">Your pond location has been recorded. You can close this page.</p>' +
+          tempLine;
         document.querySelector('main').appendChild(done);
       })
       .catch(() => {

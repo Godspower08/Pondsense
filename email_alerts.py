@@ -48,8 +48,11 @@ GEMINI_URL = (
     f"{GEMINI_MODEL}:generateContent"
 )
  
+# Switched from port 587/STARTTLS to port 465/implicit SSL - this
+# network blocks outbound 587 (WinError 10060 timeouts) while 465 is
+# confirmed clean (see email_reply_handler.py fix, same root cause).
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
  
 TIER_SUBJECT = {
     RiskTier.SAFE:   "PondSense: Conditions normal",
@@ -206,8 +209,7 @@ def send_location_gap_email(to_email: str, pond_id: str, location_token: str) ->
     msg.attach(MIMEText(body, "plain"))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
         print(f"[LOCATION GAP EMAIL SENT] {to_email} - {pond_id}")
@@ -239,8 +241,7 @@ def send_email(to_email: str, assessment: RiskAssessment, pond_id: str) -> bool:
     msg.attach(MIMEText(body, "plain"))
  
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
             server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
         print(f"[EMAIL SENT] {to_email} - {subject}")

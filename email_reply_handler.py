@@ -55,7 +55,7 @@ GEMINI_URL = (
 
 IMAP_HOST = "imap.gmail.com"
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 
 # Guardrail: only auto-reply to threads whose subject contains this.
 # Set to "" to disable filtering (NOT recommended on a shared inbox).
@@ -320,8 +320,7 @@ def send_reply(to_email: str, subject: str, body: str, in_reply_to, references) 
 
     for attempt in range(max_attempts):
         try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
                 server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
                 server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
             print(f"[REPLY SENT] {to_email} - {reply_subject}")

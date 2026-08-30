@@ -23,6 +23,7 @@ import requests
 from flask import Blueprint, request, jsonify, abort
 
 from farmer_data import get_pond_by_token, update_pond_location
+import api_adapter
 
 location_bp = Blueprint("location", __name__)
 
@@ -132,6 +133,13 @@ def submit_location(token):
 
     if lat is None or lng is None:
         return jsonify({"error": "lat/lng required"}), 400
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return jsonify({"error": "lat/lng must be numbers"}), 400
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        return jsonify({"error": "lat must be -90..90 and lng must be -180..180"}), 400
     if method not in ("gps_confirmed", "maps_link", "manual_pin"):
         return jsonify({"error": "invalid method"}), 400
     if pond_width_m is None:
@@ -145,11 +153,33 @@ def submit_location(token):
 
     update_pond_location(
         pond_id=pond.pond_id,
-        lat=float(lat),
-        lng=float(lng),
+        lat=lat,
+        lng=lng,
         accuracy_m=float(accuracy_m) if accuracy_m is not None else None,
         method=method,
         pond_width_m=pond_width_m,
     )
 
-    return jsonify({"status": "ok"})
+    # Best-effort current-temp reading for this pond's exact location,
+    # so the farmer sees something real immediately after pinning -
+    # not the full 6hr degree-hour window (that's orchestrator.py's
+    # job), just ONE live FortyGuard reading. This can take anywhere
+    # from a few seconds to ~30s (submit+poll, plus a day-by-day
+    # coverage-gap walk-back if today's data isn't ready yet) - the
+    # location save itself has ALREADY succeeded above regardless of
+    # what happens here, so a slow or failed fetch never blocks or
+    # fails the save. current_temp_c is simply omitted from the
+    # response if this doesn't come back in time or errors out.
+    response = {"status": "ok"}
+    try:
+        readings = api_adapter.get_latest_available_readings(
+            latitude=lat,
+            longitude=lng,
+            pond_width_m=pond_width_m,
+            hours=1,
+        )
+        response["current_temp_c"] = readings[-1].ambient_temp_c
+    except Exception as e:
+        print(f"[LOCATION SAVE] current-temp fetch failed (save still succeeded): {e}")
+
+    return jsonify(response)
