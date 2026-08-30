@@ -3,6 +3,7 @@
 Automated heat-risk alerts for U.S. warm-water pond aquaculture (catfish and hybrid striped bass), built on FortyGuard's Temperature API.
 
 **Live demo:** https://pondsense.onrender.com
+**Demo video:** https://canva.link/demqshjv5o3o521
 **Full design and architecture:** see [`CONCEPT_NOTE.md`](./CONCEPT_NOTE.md)
 **Submission summary:** see [`SUBMISSION_SUMMARY.md`](./SUBMISSION_SUMMARY.md)
 
